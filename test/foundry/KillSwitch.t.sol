@@ -114,7 +114,7 @@ contract KernelExecutionTest is Test {
 
         op.signature = bytes.concat(bytes4(0), entryPoint.signUserOpHash(vm, guardianKeyPriv, op));
         ops[0] = op;
-        entryPoint.handleOps(ops, beneficiary); // should revert because kill switch is active
+        entryPoint.handleOps(ops, beneficiary);
         assertEq(kernel.getDisabledMode(), bytes4(0));
     }
 
