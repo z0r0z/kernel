@@ -51,11 +51,12 @@ contract MultiECDSAValidator is IKernelValidator {
     }
 
     function validateSignature(bytes32 hash, bytes calldata signature) public view override returns (ValidationData) {
-        address signer = ECDSA.recover(hash, signature);
+        bytes32 wrappedHash = keccak256(abi.encodePacked(hash, msg.sender));
+        address signer = ECDSA.recover(wrappedHash, signature);
         if (isOwner[signer][msg.sender]) {
             return ValidationData.wrap(0);
         }
-        bytes32 ethHash = ECDSA.toEthSignedMessageHash(hash);
+        bytes32 ethHash = ECDSA.toEthSignedMessageHash(wrappedHash);
         signer = ECDSA.recover(ethHash, signature);
         if (!isOwner[signer][msg.sender]) {
             return SIG_VALIDATION_FAILED;

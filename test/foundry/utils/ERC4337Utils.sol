@@ -7,7 +7,12 @@ import "solady/utils/ECDSA.sol";
 import "src/Kernel.sol";
 import "src/factory/KernelFactory.sol";
 import "src/validator/ECDSAValidator.sol";
+import "src/test/TestValidator.sol";
+import "src/test/TestERC721.sol";
+import "src/test/TestKernel.sol";
 
+
+using ERC4337Utils for EntryPoint;
 abstract contract KernelTestBase is Test {
     Kernel kernel;
     Kernel kernelImpl;
@@ -30,6 +35,129 @@ abstract contract KernelTestBase is Test {
         factory.setImplementation(address(kernelImpl), true);
         vm.stopPrank();
     }
+    
+    function test_external_call_default() external {
+        vm.startPrank(owner);
+        (bool success,) = address(kernel).call(abi.encodePacked("Hello world"));
+        assertEq(success, true);
+    }
+
+    function test_initialize_twice() external {
+        (bool success, ) = address(kernel).call(getInitializeData());
+        assertEq(success, false);
+    }
+    
+    function test_should_return_address_if_deployed() external {
+        address proxy = factory.createAccount(
+            address(kernelImpl),
+            getInitializeData(),
+            0
+        );
+        assertEq(proxy, address(kernel));
+    }
+
+    function test_validate_signature() external {
+        bytes32 hash = keccak256(abi.encodePacked("hello world"));
+        bytes memory sig = signHash(hash);
+        assertEq(kernel.isValidSignature(hash, sig), Kernel.isValidSignature.selector);
+    }
+
+    function test_set_default_validator() external {
+        TestValidator newValidator = new TestValidator();
+        bytes memory empty;
+        UserOperation memory op = entryPoint.fillUserOp(
+            address(kernel),
+            abi.encodeWithSelector(KernelStorage.setDefaultValidator.selector, address(newValidator), empty)
+        );
+        op.signature = signUserOp(op);
+        UserOperation[] memory ops = new UserOperation[](1);
+        ops[0] = op;
+        entryPoint.handleOps(ops, beneficiary);
+        assertEq(address(KernelStorage(address(kernel)).getDefaultValidator()), address(newValidator));
+    }
+
+    function test_disable_mode() external {
+        vm.warp(1000);
+        bytes memory empty;
+        UserOperation memory op = entryPoint.fillUserOp(
+            address(kernel),
+            abi.encodeWithSelector(KernelStorage.disableMode.selector, bytes4(0x00000001), address(0), empty)
+        );
+        op.signature = signUserOp(op);
+        UserOperation[] memory ops = new UserOperation[](1);
+        ops[0] = op;
+        entryPoint.handleOps(ops, beneficiary);
+        assertEq(uint256(bytes32(KernelStorage(address(kernel)).getDisabledMode())), 1 << 224);
+    }
+
+    function test_set_execution() external {
+        TestValidator newValidator = new TestValidator();
+        UserOperation memory op = entryPoint.fillUserOp(
+            address(kernel),
+            abi.encodeWithSelector(
+                KernelStorage.setExecution.selector,
+                bytes4(0xdeadbeef),
+                address(0xdead),
+                address(newValidator),
+                uint48(0),
+                uint48(0),
+                bytes("")
+            )
+        );
+        op.signature = signUserOp(op);
+        UserOperation[] memory ops = new UserOperation[](1);
+        ops[0] = op;
+        entryPoint.handleOps(ops, beneficiary);
+        ExecutionDetail memory execution = KernelStorage(address(kernel)).getExecution(bytes4(0xdeadbeef));
+        assertEq(execution.executor, address(0xdead));
+        assertEq(address(execution.validator), address(newValidator));
+        assertEq(uint256(ValidUntil.unwrap(execution.validUntil)), uint256(0));
+        assertEq(uint256(ValidAfter.unwrap(execution.validAfter)), uint256(0));
+    }
+
+    function test_external_call_execution() external {
+        TestValidator newValidator = new TestValidator();
+        UserOperation memory op = entryPoint.fillUserOp(
+            address(kernel),
+            abi.encodeWithSelector(
+                KernelStorage.setExecution.selector,
+                bytes4(0xdeadbeef),
+                address(0xdead),
+                address(newValidator),
+                uint48(0),
+                uint48(0),
+                bytes("")
+            )
+        );
+        op.signature = signUserOp(op);
+        UserOperation[] memory ops = new UserOperation[](1);
+        ops[0] = op;
+        entryPoint.handleOps(ops, beneficiary);
+        ExecutionDetail memory execution = KernelStorage(address(kernel)).getExecution(bytes4(0xdeadbeef));
+        assertEq(execution.executor, address(0xdead));
+        assertEq(address(execution.validator), address(newValidator));
+        assertEq(uint256(ValidUntil.unwrap(execution.validUntil)), uint256(0));
+        assertEq(uint256(ValidAfter.unwrap(execution.validAfter)), uint256(0));
+
+        address randomAddr = makeAddr("random");
+        newValidator.sudoSetCaller(address(kernel), randomAddr);
+        vm.startPrank(randomAddr);
+        (bool success,) = address(kernel).call(abi.encodePacked(bytes4(0xdeadbeef)));
+        assertEq(success, true);
+        vm.stopPrank();
+
+        address notAllowed = makeAddr("notAllowed");
+        vm.startPrank(notAllowed);
+        (bool success2,) = address(kernel).call(abi.encodePacked(bytes4(0xdeadbeef)));
+        assertEq(success2, false);
+        vm.stopPrank();
+    }
+
+    function getInitializeData() internal virtual view returns(bytes memory);
+
+    function signUserOp(UserOperation memory op) internal virtual view returns(bytes memory);
+
+    function signHash(bytes32 hash) internal virtual view returns(bytes memory);
 
     function _setAddress() internal {
         kernel = Kernel(
@@ -37,9 +165,7 @@ abstract contract KernelTestBase is Test {
                 address(
                     factory.createAccount(
                         address(kernelImpl),
-                        abi.encodeWithSelector(
-                            KernelStorage.initialize.selector, defaultValidator, abi.encodePacked(owner)
-                        ),
+                        getInitializeData(),
                         0
                     )
                 )

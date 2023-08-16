@@ -18,7 +18,7 @@ import "src/validator/SessionKeyValidator.sol";
 
 using ERC4337Utils for EntryPoint;
 
-contract SessionKeyValidatorTest is KernelTestBase {
+abstract contract SessionKeyValidatorTest is KernelTestBase {
     ExecuteSessionKeyValidator sessionKeyValidator;
     TestERC20 testToken;
     address sessionKey;
