@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 // Importing necessary interfaces
 import "account-abstraction/interfaces/IEntryPoint.sol";
 import "src/interfaces/IValidator.sol";
+import "src/interfaces/IKernel.sol";
 import "src/common/Constants.sol";
 import "src/common/Structs.sol";
 
@@ -11,17 +12,8 @@ import "src/common/Structs.sol";
 /// @author taek<leekt216@gmail.com>
 /// @notice This contract serves as the storage module for the Kernel contract.
 /// @dev This contract should only be used by the main Kernel contract.
-contract KernelStorage {
+abstract contract KernelStorage is IKernel {
     IEntryPoint public immutable entryPoint; // The entry point of the contract
-
-    // Event declarations
-    event Upgraded(address indexed newImplementation);
-    event DefaultValidatorChanged(address indexed oldValidator, address indexed newValidator);
-    event ExecutionChanged(bytes4 indexed selector, address indexed executor, address indexed validator);
-
-    // Error declarations
-    error NotAuthorizedCaller();
-    error AlreadyInitialized();
 
     // Modifier to check if the function is called by the entry point, the contract itself or the owner
     modifier onlyFromEntryPointOrSelf() {
@@ -39,8 +31,16 @@ contract KernelStorage {
     }
 
     // Function to initialize the wallet kernel
-    function initialize(IKernelValidator _defaultValidator, bytes calldata _data) external payable {
+    function initialize(IKernelValidator _defaultValidator, bytes calldata _data) external override payable {
         _setInitialData(_defaultValidator, _data);
+    }
+
+    // Function to upgrade the contract to a new implementation
+    function upgradeTo(address _newImplementation) external override payable onlyFromEntryPointOrSelf {
+        assembly {
+            sstore(IMPLEMENTATION_SLOT, _newImplementation)
+        }
+        emit Upgraded(_newImplementation);
     }
 
     // Function to get the wallet kernel storage
@@ -48,14 +48,6 @@ contract KernelStorage {
         assembly {
             ws.slot := KERNEL_STORAGE_SLOT
         }
-    }
-
-    // Function to upgrade the contract to a new implementation
-    function upgradeTo(address _newImplementation) external payable onlyFromEntryPointOrSelf {
-        assembly {
-            sstore(IMPLEMENTATION_SLOT, _newImplementation)
-        }
-        emit Upgraded(_newImplementation);
     }
 
     // Functions to get the nonce from the entry point
@@ -103,15 +95,15 @@ contract KernelStorage {
         bytes4 _selector,
         address _executor,
         IKernelValidator _validator,
-        uint48 _validUntil,
-        uint48 _validAfter,
+        ValidUntil _validUntil,
+        ValidAfter _validAfter,
         bytes calldata _enableData
-    ) external payable onlyFromEntryPointOrSelf {
+    ) external payable override onlyFromEntryPointOrSelf {
         getKernelStorage().execution[_selector] = ExecutionDetail({
             executor: _executor,
             validator: _validator,
-            validUntil: ValidUntil.wrap(_validUntil),
-            validAfter: ValidAfter.wrap(_validAfter)
+            validUntil: _validUntil,
+            validAfter: _validAfter
         });
         _validator.enable(_enableData);
         emit ExecutionChanged(_selector, _executor, address(_validator));
@@ -120,6 +112,7 @@ contract KernelStorage {
     function setDefaultValidator(IKernelValidator _defaultValidator, bytes calldata _data)
         external
         payable
+        override
         onlyFromEntryPointOrSelf
     {
         IKernelValidator oldValidator = getKernelStorage().defaultValidator;

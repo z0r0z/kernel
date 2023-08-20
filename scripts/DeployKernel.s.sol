@@ -16,6 +16,7 @@ contract DeployKernel is Script {
         if(EXPECTED_KERNEL_ADDRESS.code.length == 0 ){
             kernel = new Kernel{salt:0}(IEntryPoint(ENTRYPOINT_0_6));
             console.log("Kernel address: %s", address(kernel));
+            require(address(kernel) == EXPECTED_KERNEL_ADDRESS, "Kernel address mismatch");
         } else {
             kernel = Kernel(EXPECTED_KERNEL_ADDRESS);
         }

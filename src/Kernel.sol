@@ -55,7 +55,7 @@ contract Kernel is EIP712, Compatibility, KernelStorage {
     /// @param value The amount of Ether to send
     /// @param data The call data to be sent
     /// @param operation The type of operation (call or delegatecall)
-    function execute(address to, uint256 value, bytes memory data, Operation operation) external payable {
+    function execute(address to, uint256 value, bytes memory data, Operation operation) external payable override {
         if (msg.sender != address(entryPoint) && !_checkCaller()) {
             revert NotAuthorizedCaller();
         }
@@ -87,6 +87,7 @@ contract Kernel is EIP712, Compatibility, KernelStorage {
     function validateUserOp(UserOperation memory userOp, bytes32 userOpHash, uint256 missingAccountFunds)
         external
         payable
+        override
         returns (ValidationData validationData)
     {
         if (msg.sender != address(entryPoint)) {
@@ -213,7 +214,7 @@ contract Kernel is EIP712, Compatibility, KernelStorage {
     /// @param hash The hash of the data that was signed
     /// @param signature The signature to be validated
     /// @return The magic value 0x1626ba7e if the signature is valid, otherwise returns 0xffffffff.
-    function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+    function isValidSignature(bytes32 hash, bytes calldata signature) external view override returns (bytes4) {
         ValidationData validationData = getKernelStorage().defaultValidator.validateSignature(hash, signature);
         (ValidAfter validAfter, ValidUntil validUntil, address result) = parseValidationData(validationData);
         if (ValidAfter.unwrap(validAfter) > block.timestamp) {
